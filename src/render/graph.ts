@@ -80,7 +80,8 @@ export class PopulationGraph {
       if (n < 2) return;
       const cap = hist.capacity;
       const x = (k: number) => padL + ((W - padL - padR) * (k + cap - n)) / (cap - 1);
-      const y = (v: number) => bottom - ((bottom - top) * v) / max;
+      const plotTop = top + 12 * dpr; // leave room for the scale label
+      const y = (v: number) => bottom - ((bottom - plotTop) * v) / max;
 
       // Soft area + line.
       ctx.beginPath();

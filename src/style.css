@@ -222,7 +222,7 @@ label.toggle { display: inline-flex; gap: 6px; align-items: center; cursor: poin
 
 /* Mobile: interleave cards so the controls sit right under the world. */
 @media (max-width: 860px) {
-  .layout { display: flex; flex-direction: column; gap: 12px; }
+  .layout { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
   .main-col, .panel { display: contents; }
   .stage { order: 1; }
   .o-play { order: 2; }
