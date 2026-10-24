@@ -35,11 +35,13 @@ export interface PlantParams {
   seedBiomass: number;
   /** Chance per tick an isolated fertile cell sprouts from the seed bank. */
   sproutChance: number;
+  /** Dense plants hide herbivores: catch chance is multiplied by (1 - hideFactor * biomass). */
+  hideFactor: number;
 }
 
 export interface AnimalParams {
   initialCount: number;
-  /** Cells moved per tick. */
+  /** Cells moved per tick. The fractional part is the chance of one extra step. */
   speed: number;
   /** Search radius (Chebyshev) for food. */
   vision: number;
@@ -61,6 +63,10 @@ export interface AnimalParams {
   biteSize: number;
   /** Energy gained per unit of food (biomass for herbivores, one prey for carnivores). */
   foodEnergy: number;
+  /** Carnivore: chance a catch attempt on an occupied cell succeeds. Herbivore: unused. */
+  huntSuccess: number;
+  /** Herbivore: flee from a carnivore within this radius (0 disables). Carnivore: unused. */
+  fleeRadius: number;
 }
 
 export interface SimParams {
@@ -84,7 +90,7 @@ export const DEFAULT_PARAMS: SimParams = {
     rainAmount: 0.6,
   },
   plant: {
-    initialCover: 0.25,
+    initialCover: 0.5,
     growthThreshold: 0.25,
     growthRate: 0.06,
     wiltRate: 0.01,
@@ -92,34 +98,39 @@ export const DEFAULT_PARAMS: SimParams = {
     seedRate: 0.02,
     seedBiomass: 0.08,
     sproutChance: 0.0002,
+    hideFactor: 0.5,
   },
   herbivore: {
-    initialCount: 120,
+    initialCount: 100,
     speed: 1,
     vision: 3,
-    metabolism: 0.02,
+    metabolism: 0.015,
     moveCost: 0.01,
     reproduceThreshold: 1.6,
     reproduceShare: 0.5,
     maxEnergy: 2.5,
-    initialEnergy: 1,
+    initialEnergy: 1.5,
     lifespan: 300,
-    biteSize: 0.25,
-    foodEnergy: 0.6,
+    biteSize: 0.15,
+    foodEnergy: 0.5,
+    huntSuccess: 0,
+    fleeRadius: 2,
   },
   carnivore: {
-    initialCount: 15,
-    speed: 2,
+    initialCount: 6,
+    speed: 1.2,
     vision: 5,
-    metabolism: 0.025,
+    metabolism: 0.01,
     moveCost: 0.006,
-    reproduceThreshold: 2.4,
+    reproduceThreshold: 3.5,
     reproduceShare: 0.5,
-    maxEnergy: 3.5,
-    initialEnergy: 1.5,
-    lifespan: 450,
-    biteSize: 1,
-    foodEnergy: 0.9,
+    maxEnergy: 4,
+    initialEnergy: 2,
+    lifespan: 500,
+    biteSize: 0,
+    foodEnergy: 0.25,
+    huntSuccess: 0.2,
+    fleeRadius: 0,
   },
 };
 

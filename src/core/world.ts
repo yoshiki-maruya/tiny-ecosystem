@@ -1,5 +1,6 @@
 import { Rng } from './rng';
 import { cloneParams, type SimParams } from './params';
+import { spawnInitialAgents, type Agent } from './agents';
 
 export interface World {
   readonly params: SimParams;
@@ -14,6 +15,11 @@ export interface World {
   plant: Float64Array;
   /** Scratch buffer reused by diffusion / plant updates. */
   scratch: Float64Array;
+  /** Living animals (plus ones that died this tick until compaction). */
+  agents: Agent[];
+  nextId: number;
+  /** Per-species intrusive linked lists of agents per cell: cellHead[species][cell]. */
+  cellHead: [(Agent | null)[], (Agent | null)[]];
 }
 
 export function createWorld(params: SimParams, seed: number): World {
@@ -31,8 +37,12 @@ export function createWorld(params: SimParams, seed: number): World {
     water: new Float64Array(n),
     plant: new Float64Array(n),
     scratch: new Float64Array(n),
+    agents: [],
+    nextId: 1,
+    cellHead: [new Array<Agent | null>(n).fill(null), new Array<Agent | null>(n).fill(null)],
   };
   initTerrain(world);
+  spawnInitialAgents(world);
   return world;
 }
 
@@ -116,7 +126,8 @@ export function stepPlants(world: World): void {
       let nb = b;
       if (b > 0) {
         if (m >= pp.growthThreshold) {
-          const g = Math.min(pp.growthRate * m * b * (1 - b), m / Math.max(pp.waterUse, 1e-9));
+          // Logistic growth plus a root term so grazed cells regrow at a usable pace.
+          const g = Math.min(pp.growthRate * m * (b + 0.15) * (1 - b), m / Math.max(pp.waterUse, 1e-9));
           nb = b + g;
           water[i] = clamp01(m - g * pp.waterUse);
         } else {

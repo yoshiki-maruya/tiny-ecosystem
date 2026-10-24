@@ -18,5 +18,15 @@ export function hashWorld(world: World): string {
   mix(world.rng.state);
   for (let i = 0; i < world.water.length; i++) mixF(world.water[i]);
   for (let i = 0; i < world.plant.length; i++) mixF(world.plant[i]);
+  mix(world.nextId);
+  mix(world.agents.length);
+  for (const a of world.agents) {
+    mix(a.id);
+    mix(a.species);
+    mix(a.x);
+    mix(a.y);
+    mixF(a.energy);
+    mix(a.age);
+  }
   return h.toString(16).padStart(8, '0');
 }
