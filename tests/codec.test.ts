@@ -13,7 +13,7 @@ describe('URL codec', () => {
     live.advanceTo(40);
     live.intervene({ type: 'rain', x: 20, y: 20 });
     live.advanceTo(200);
-    live.intervene({ type: 'add', species: 'carnivore', x: 40, y: 8 });
+    live.intervene({ type: 'add', species: 'carnivore', x: 28, y: 8 });
     live.advanceTo(500);
     live.intervene({ type: 'add', species: 'plant', x: 2, y: 2 });
     live.advanceTo(640);
@@ -40,8 +40,8 @@ describe('URL codec', () => {
   it('detects other versions and garbage', async () => {
     expect(await decodeState('')).toEqual({ ok: false, reason: 'empty' });
     expect(await decodeState('#v999.abc')).toMatchObject({ ok: false, reason: 'version', version: 999 });
-    expect(await decodeState('#v1.@@@')).toMatchObject({ ok: false, reason: 'corrupt' });
-    expect(await decodeState('#v1.zAAAA')).toMatchObject({ ok: false, reason: 'corrupt' });
-    expect(await decodeState('#v1.jAAAA')).toMatchObject({ ok: false, reason: 'corrupt' });
+    expect(await decodeState('#v2.@@@')).toMatchObject({ ok: false, reason: 'corrupt' });
+    expect(await decodeState('#v2.zAAAA')).toMatchObject({ ok: false, reason: 'corrupt' });
+    expect(await decodeState('#v2.jAAAA')).toMatchObject({ ok: false, reason: 'corrupt' });
   });
 });

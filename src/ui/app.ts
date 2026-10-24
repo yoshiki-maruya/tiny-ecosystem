@@ -1,4 +1,4 @@
-import { census } from '../core/agents';
+import { census, type Agent, type DeathCause } from '../core/agents';
 import { hashWorld } from '../core/hash';
 import { RULES, type AddTarget, type Intervention } from '../core/interventions';
 import { hashSeed } from '../core/rng';
@@ -13,9 +13,12 @@ import { h } from './dom';
 import { PopulationHistory } from './history';
 import { FixedStepClock } from './loop';
 import { buildParamsPanel } from './paramsPanel';
+import { Inspector } from './inspector';
 import { PRESETS, type Preset } from './presets';
 
 const SPEEDS = [1, 4, 16, 64] as const;
+/** Above this speed motion is not interpolated (many ticks per frame). */
+const SMOOTH_MAX_SPEED = 4;
 /** Max wall time spent per frame while fast-forwarding a shared URL. */
 const REPLAY_BUDGET_MS = 28;
 
@@ -45,6 +48,11 @@ export class App {
   private showWater = false;
   private tool: Tool | null = null;
   private hover: { x: number; y: number } | null = null;
+  private selectedId: number | null = null;
+  private selectedCell: { x: number; y: number } | null = null;
+  /** Remembered fate of the observed animal, once it dies. */
+  private selectedFate: { cause: DeathCause; tick: number; agent: Agent } | null = null;
+  private readonly inspector = new Inspector();
   private readonly history = new PopulationHistory(720);
   /** Pending fast-forward target when opening a shared URL. */
   private replayTarget: number | null = null;
@@ -142,7 +150,7 @@ export class App {
       {},
       h('h2', {}, '介入'),
       tools,
-      h('p.muted', { style: 'margin:8px 0 0' }, `ツールを選んで盤面をタップ。生き物の追加は1回の世界で${RULES.add.maxUses}回まで。`),
+      h('p.muted', { style: 'margin:8px 0 0' }, `ツールを選んで盤面をタップ（もう一度押すと解除）。生き物の追加は1回の世界で${RULES.add.maxUses}回まで。`),
     );
 
     const graphCard = h('section.card.o-graph', {}, h('h2', {}, `個体数の推移（直近${this.history.capacity} tick）`), this.graphCanvas);
@@ -173,7 +181,7 @@ export class App {
         'div.layout',
         {},
         h('div.main-col', {}, h('section.stage', {}, this.canvas, this.overlay, this.toast, this.hud), graphCard),
-        h('aside.panel', {}, playback, interventions, logCard, presetCard, this.paramsPanel),
+        h('aside.panel', {}, this.inspector.el, playback, interventions, logCard, presetCard, this.paramsPanel),
       ),
     );
   }
@@ -196,7 +204,12 @@ export class App {
       this.clock.ticksFor(now);
     }
     const blocked = this.tool ? !this.toolReady(this.tool) : false;
+    const smooth = this.running && this.replayTarget === null && this.clock.speed <= SMOOTH_MAX_SPEED;
+    const alpha = smooth ? this.clock.fraction : 1;
     this.renderer.render(this.sim.world, {
+      alpha,
+      selectedId: this.selectedId,
+      selectedCell: this.selectedId === null ? this.selectedCell : null,
       showWater: this.showWater || this.tool === 'rain',
       cursor:
         this.tool && this.hover
@@ -204,6 +217,7 @@ export class App {
           : null,
     });
     this.graph.render(this.history);
+    this.updateInspector();
     this.updateHud();
     this.updateTools();
     requestAnimationFrame(this.frame);
@@ -215,6 +229,14 @@ export class App {
     const [herb, carn] = census(w);
     this.history.push(w.tick, plantBiomass(w), herb, carn);
     for (const ev of events) this.onEvent(ev, live);
+    if (this.selectedId !== null && !this.selectedFate) {
+      const d = w.deaths.find((r) => r.id === this.selectedId);
+      if (d) {
+        const last = this.lastSelected;
+        if (last) this.selectedFate = { cause: d.cause, tick: w.tick, agent: last };
+      }
+    }
+    if (live && this.clock.speed <= SMOOTH_MAX_SPEED) this.renderer.addDeaths(w.deaths, w);
   }
 
   private replayChunk(): void {
@@ -237,6 +259,10 @@ export class App {
     this.params = cloneParams(params);
     this.sim = new Simulation(seed, this.params, log);
     this.sim.onIntervention = (iv) => this.addLog(describeIntervention(iv), 'intervention', iv.tick);
+    this.selectedId = null;
+    this.selectedCell = null;
+    this.selectedFate = null;
+    this.renderer.clearEffects();
     this.history.clear();
     this.logList.replaceChildren();
     this.clock.reset();
@@ -305,9 +331,13 @@ export class App {
   }
 
   private onCanvasClick(e: MouseEvent): void {
-    if (!this.tool || this.replayTarget !== null) return;
+    if (this.replayTarget !== null) return;
     const cell = this.renderer.cellAt(this.sim.world, e.clientX, e.clientY);
     if (!cell) return;
+    if (!this.tool) {
+      this.selectAt(e);
+      return;
+    }
     const input: InterventionInput =
       this.tool === 'rain' ? { type: 'rain', ...cell } : { type: 'add', species: this.tool, ...cell };
     if (!this.sim.intervene(input)) {
@@ -315,6 +345,56 @@ export class App {
       return;
     }
     if (this.tool !== 'rain' && this.sim.status().addUsesLeft === 0) this.tool = null;
+  }
+
+  /** Without a tool, a click picks the nearest animal (or the cell) to observe. */
+  private selectAt(e: MouseEvent): void {
+    const w = this.sim.world;
+    const { gx, gy } = this.renderer.gridAt(w, e.clientX, e.clientY);
+    const alpha = this.running && this.clock.speed <= SMOOTH_MAX_SPEED ? this.clock.fraction : 1;
+    let best: Agent | null = null;
+    let bestD = 0.8 * 0.8;
+    for (const a of w.agents) {
+      if (!a.alive) continue;
+      const p = this.renderer.agentPos(a, alpha);
+      const d = (p.x - gx) ** 2 + (p.y - gy) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        best = a;
+      }
+    }
+    this.selectedFate = null;
+    if (best) {
+      this.selectedId = best.id;
+      this.selectedCell = null;
+    } else {
+      this.selectedId = null;
+      this.selectedCell = { x: Math.floor(gx), y: Math.floor(gy) };
+    }
+  }
+
+  private get lastSelected(): Agent | null {
+    return this.inspector.lastAgent;
+  }
+
+  private updateInspector(): void {
+    const w = this.sim.world;
+    if (this.selectedFate) {
+      this.inspector.showDeath(this.selectedFate.agent, this.selectedFate.cause, this.selectedFate.tick, w);
+      return;
+    }
+    if (this.selectedId !== null) {
+      const a = w.agents.find((x) => x.id === this.selectedId && x.alive);
+      if (a) {
+        this.inspector.showAgent(a, w);
+        return;
+      }
+    }
+    if (this.selectedCell) {
+      this.inspector.showCell(this.selectedCell.x, this.selectedCell.y, w);
+      return;
+    }
+    this.inspector.showHint();
   }
 
   // ---------------------------------------------------------------- events & UI sync

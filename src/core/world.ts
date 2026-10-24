@@ -1,6 +1,6 @@
 import { Rng } from './rng';
 import { cloneParams, type SimParams } from './params';
-import { spawnInitialAgents, type Agent } from './agents';
+import { spawnInitialAgents, type Agent, type DeathRecord } from './agents';
 
 export interface World {
   readonly params: SimParams;
@@ -18,6 +18,8 @@ export interface World {
   /** Living animals (plus ones that died this tick until compaction). */
   agents: Agent[];
   nextId: number;
+  /** Animals that died during the last tick (observation only). */
+  deaths: DeathRecord[];
   /** Per-species intrusive linked lists of agents per cell: cellHead[species][cell]. */
   cellHead: [(Agent | null)[], (Agent | null)[]];
 }
@@ -39,6 +41,7 @@ export function createWorld(params: SimParams, seed: number): World {
     scratch: new Float64Array(n),
     agents: [],
     nextId: 1,
+    deaths: [],
     cellHead: [new Array<Agent | null>(n).fill(null), new Array<Agent | null>(n).fill(null)],
   };
   initTerrain(world);

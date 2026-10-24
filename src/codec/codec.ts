@@ -16,7 +16,7 @@ import type { AddTarget, Intervention } from '../core/interventions';
  * way that alters outcomes; old links are then detected instead of silently
  * replaying a different history.
  */
-export const CODEC_VERSION = 1;
+export const CODEC_VERSION = 2;
 
 export interface SharedState {
   seed: number;

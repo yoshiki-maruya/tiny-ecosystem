@@ -1,5 +1,5 @@
 /** Logical tick rate at 1x. Ticks are fixed-step, independent of display fps. */
-export const TICKS_PER_SECOND_1X = 30;
+export const TICKS_PER_SECOND_1X = 5;
 
 /**
  * Fixed-step scheduler: accumulates real time and reports how many whole
@@ -15,6 +15,11 @@ export class FixedStepClock {
   reset(): void {
     this.acc = 0;
     this.last = -1;
+  }
+
+  /** Progress (0..1) toward the next tick; used to interpolate motion. */
+  get fraction(): number {
+    return this.acc;
   }
 
   ticksFor(now: number): number {

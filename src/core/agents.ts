@@ -9,6 +9,18 @@ export const SPECIES_KEYS = ['herbivore', 'carnivore'] as const;
 /** Biomass that grazing never removes. */
 const GRAZE_RESIDUAL = 0.03;
 
+/** What an animal did this tick. Observation only: never feeds back into the rules. */
+export type Action = 'eat' | 'seek' | 'flee' | 'hunt' | 'catch' | 'wander' | 'rest';
+export type DeathCause = 'eaten' | 'starved' | 'old';
+
+export interface DeathRecord {
+  id: number;
+  species: Species;
+  x: number;
+  y: number;
+  cause: DeathCause;
+}
+
 export interface Agent {
   id: number;
   species: Species;
@@ -17,6 +29,16 @@ export interface Agent {
   energy: number;
   age: number;
   alive: boolean;
+  /** Position at the start of the current tick (for smooth rendering). */
+  px: number;
+  py: number;
+  /** Tick of birth (0 for the initial population). */
+  born: number;
+  /** Horizontal facing, -1 or 1 (for rendering). */
+  facing: number;
+  action: Action;
+  /** Set when the agent dies. */
+  cause: DeathCause | null;
   /** Intrusive per-cell list links (same species only). */
   prev: Agent | null;
   next: Agent | null;
@@ -51,15 +73,18 @@ function unlink(world: World, a: Agent): void {
 
 function moveTo(world: World, a: Agent, x: number, y: number): void {
   if (x === a.x && y === a.y) return;
+  if (x !== a.x) a.facing = x > a.x ? 1 : -1;
   unlink(world, a);
   a.x = x;
   a.y = y;
   link(world, a);
 }
 
-function kill(world: World, a: Agent): void {
+function kill(world: World, a: Agent, cause: DeathCause): void {
   if (!a.alive) return;
   a.alive = false;
+  a.cause = cause;
+  world.deaths.push({ id: a.id, species: a.species, x: a.x, y: a.y, cause });
   unlink(world, a);
 }
 
@@ -74,6 +99,12 @@ export function spawnAgent(world: World, species: Species, x: number, y: number,
     energy: Math.min(Math.max(energy, 0), p.maxEnergy),
     age,
     alive: true,
+    px: clampInt(x, 0, world.width - 1),
+    py: clampInt(y, 0, world.height - 1),
+    born: world.tick,
+    facing: 1,
+    action: 'rest',
+    cause: null,
     prev: null,
     next: null,
   };
@@ -169,13 +200,14 @@ function findNearest(world: World, a: Agent, species: Species, vision: number): 
   return null;
 }
 
-function eatPlant(world: World, a: Agent, p: AnimalParams): void {
+function eatPlant(world: World, a: Agent, p: AnimalParams): boolean {
   const i = a.y * world.width + a.x;
   // Grazing leaves roots behind so the cell can regrow.
   const amt = Math.min(p.biteSize, world.plant[i] - GRAZE_RESIDUAL);
-  if (amt <= 0) return;
+  if (amt <= 0) return false;
   world.plant[i] -= amt;
   a.energy = Math.min(p.maxEnergy, a.energy + amt * p.foodEnergy);
+  return true;
 }
 
 function tryCatch(world: World, a: Agent, p: AnimalParams): boolean {
@@ -183,7 +215,8 @@ function tryCatch(world: World, a: Agent, p: AnimalParams): boolean {
   if (!prey) return false;
   const cover = world.plant[a.y * world.width + a.x] * world.params.plant.hideFactor;
   if (!world.rng.chance(p.huntSuccess * Math.max(0, 1 - cover))) return false;
-  kill(world, prey);
+  kill(world, prey, 'eaten');
+  a.action = 'catch';
   a.energy = Math.min(p.maxEnergy, a.energy + p.foodEnergy);
   return true;
 }
@@ -194,7 +227,11 @@ function reproduce(world: World, a: Agent, p: AnimalParams): void {
   a.energy -= childEnergy;
   const [dx, dy] = DIRS[world.rng.int(8)];
   // Newborns are appended to world.agents but are not in this tick's order list.
-  spawnAgent(world, a.species, a.x + dx, a.y + dy, childEnergy);
+  const child = spawnAgent(world, a.species, a.x + dx, a.y + dy, childEnergy);
+  child.born = world.tick + 1;
+  child.px = a.x;
+  child.py = a.y;
+  child.facing = a.facing;
 }
 
 function updateHerbivore(world: World, a: Agent, p: AnimalParams): void {
@@ -202,7 +239,9 @@ function updateHerbivore(world: World, a: Agent, p: AnimalParams): void {
   const here = world.plant[a.y * world.width + a.x];
   let moved = 0;
   const threat = p.fleeRadius > 0 ? findNearest(world, a, CARNIVORE, p.fleeRadius) : null;
+  a.action = 'rest';
   if (threat !== null) {
+    a.action = 'flee';
     const tx = threat % world.width;
     const ty = (threat - tx) / world.width;
     for (let s = 0; s < speed; s++) {
@@ -219,6 +258,7 @@ function updateHerbivore(world: World, a: Agent, p: AnimalParams): void {
   } else if (here < 0.15) {
     const target = findPlant(world, a, p.vision);
     if (target !== null) {
+      a.action = 'seek';
       const tx = target % world.width;
       const ty = (target - tx) / world.width;
       for (let s = 0; s < speed && (a.x !== tx || a.y !== ty); s++) {
@@ -226,6 +266,7 @@ function updateHerbivore(world: World, a: Agent, p: AnimalParams): void {
         moved++;
       }
     } else {
+      a.action = 'wander';
       let dir = world.rng.int(8);
       for (let s = 0; s < speed; s++) {
         dir = randomStep(world, a, dir);
@@ -234,7 +275,7 @@ function updateHerbivore(world: World, a: Agent, p: AnimalParams): void {
     }
   }
   a.energy -= moved * p.moveCost;
-  eatPlant(world, a, p);
+  if (eatPlant(world, a, p) && a.action !== 'flee') a.action = 'eat';
   reproduce(world, a, p);
 }
 
@@ -243,9 +284,11 @@ function updateCarnivore(world: World, a: Agent, p: AnimalParams): void {
   let moved = 0;
   // Only hunt when not full, so satiated predators don't wipe out prey.
   const hungry = a.energy < p.maxEnergy * 0.9;
+  a.action = 'rest';
   if (hungry && !tryCatch(world, a, p)) {
     const target = findNearest(world, a, HERBIVORE, p.vision);
     if (target !== null) {
+      a.action = 'hunt';
       const tx = target % world.width;
       const ty = (target - tx) / world.width;
       for (let s = 0; s < speed; s++) {
@@ -256,6 +299,7 @@ function updateCarnivore(world: World, a: Agent, p: AnimalParams): void {
         if (tryCatch(world, a, p)) break;
       }
     } else {
+      a.action = 'wander';
       let dir = world.rng.int(8);
       for (let s = 0; s < speed; s++) {
         dir = randomStep(world, a, dir);
@@ -263,6 +307,7 @@ function updateCarnivore(world: World, a: Agent, p: AnimalParams): void {
       }
     }
   } else if (!hungry) {
+    a.action = 'rest';
     const dir = world.rng.int(8);
     randomStep(world, a, dir);
     moved++;
@@ -273,6 +318,11 @@ function updateCarnivore(world: World, a: Agent, p: AnimalParams): void {
 
 /** One tick of all animals, in a freshly shuffled order. */
 export function stepAgents(world: World): void {
+  world.deaths.length = 0;
+  for (const a of world.agents) {
+    a.px = a.x;
+    a.py = a.y;
+  }
   const order = world.rng.shuffle(world.agents.slice());
   for (const a of order) {
     if (!a.alive) continue;
@@ -283,7 +333,7 @@ export function stepAgents(world: World): void {
     else updateCarnivore(world, a, p);
     if (a.energy <= 0 || a.age >= p.lifespan) {
       a.energy = Math.max(0, a.energy);
-      kill(world, a);
+      kill(world, a, a.energy <= 0 ? 'starved' : 'old');
     }
   }
   // Compact: keep survivors and newborns in insertion order.

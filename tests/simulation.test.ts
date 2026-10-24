@@ -9,9 +9,9 @@ function scripted(seed: number, until: number): Simulation {
   const sim = new Simulation(seed, DEFAULT_PARAMS);
   const script: Record<number, Parameters<Simulation['intervene']>[0]> = {
     20: { type: 'rain', x: 10, y: 12 },
-    90: { type: 'add', species: 'herbivore', x: 30, y: 30 },
-    150: { type: 'rain', x: 50, y: 40 },
-    420: { type: 'add', species: 'carnivore', x: 5, y: 60 },
+    90: { type: 'add', species: 'herbivore', x: 16, y: 16 },
+    150: { type: 'rain', x: 25, y: 20 },
+    420: { type: 'add', species: 'carnivore', x: 5, y: 28 },
   };
   while (sim.tick < until) {
     const s = script[sim.tick];
@@ -40,7 +40,7 @@ describe('Simulation determinism', () => {
   it('interventions change the outcome', () => {
     const a = new Simulation(5);
     const b = new Simulation(5);
-    b.intervene({ type: 'rain', x: 32, y: 32 });
+    b.intervene({ type: 'rain', x: 16, y: 16 });
     a.advanceTo(50);
     b.advanceTo(50);
     expect(hashWorld(a.world)).not.toBe(hashWorld(b.world));

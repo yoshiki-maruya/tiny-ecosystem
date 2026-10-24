@@ -6,8 +6,8 @@ describe('invariants', () => {
   it('energy, moisture, biomass stay in range and agents stay on the board', () => {
     for (const seed of [1, 2, 3]) {
       const sim = new Simulation(seed, DEFAULT_PARAMS);
-      sim.intervene({ type: 'add', species: 'carnivore', x: 0, y: 0 });
-      sim.intervene({ type: 'rain', x: 63, y: 63 });
+      expect(sim.intervene({ type: 'add', species: 'carnivore', x: 0, y: 0 })).toBe(true);
+      expect(sim.intervene({ type: 'rain', x: 31, y: 31 })).toBe(true);
       let bad = 0;
       for (let t = 0; t < 800; t++) {
         sim.step();

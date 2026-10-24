@@ -12,15 +12,15 @@ export type Intervention =
  * them changes replays, so bump CODEC_VERSION (codec/) when you do.
  */
 export const RULES = {
-  rain: { radius: 6, amount: 0.7, cooldown: 60 },
+  rain: { radius: 4, amount: 0.7, cooldown: 60 },
   add: {
     /** Total species additions allowed per run. */
     maxUses: 3,
     /** Ticks between additions. */
     cooldown: 300,
     /** Spawn radius around the clicked cell. */
-    radius: 2,
-    count: { plant: 0, herbivore: 8, carnivore: 3 } as Record<AddTarget, number>,
+    radius: 1,
+    count: { plant: 0, herbivore: 5, carnivore: 2 } as Record<AddTarget, number>,
     /** Plants: biomass given to cells in the radius. */
     plantBiomass: 0.6,
   },
